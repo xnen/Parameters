@@ -193,6 +193,10 @@ public final class Parameters {
         return Arrays.stream(input).filter(Objects::nonNull).toArray(String[]::new);
     }
 
+    public IHandler getHelpHandler() {
+        return helpHandler;
+    }
+
     private int countValidInfiniteArgs(String[] args, int fromIndex) {
         int j = 0;
 
