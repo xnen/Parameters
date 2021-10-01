@@ -117,15 +117,15 @@ public final class Parameters {
         if (this.defaultParam != null) {
             String[] trimmed = trim(unhandledArgArray);
 
-            if (defaultParam.isInfinite() || this.defaultParam.getArgCount() == trimmed.length) {
+            if (this.defaultParam.isInfinite() || this.defaultParam.getArgCount() + 1 == trimmed.length) {
                 paramArgs.put(this.defaultParam, trimmed);
             } else {
                 if (this.defaultParam.getArgCount() >= trimmed.length) {
                     throw new ParameterException(0, "Parameter '" + this.defaultParam + "' consumes more args than are available.");
                 } else {
-                    String[] unhandledDefaultArgs = new String[trimmed.length - this.defaultParam.getArgCount()];
-                    for (int i = 0; i < trimmed.length - this.defaultParam.getArgCount(); i++)
-                        unhandledDefaultArgs[i] = trimmed[i + this.defaultParam.getArgCount()];
+                    String[] unhandledDefaultArgs = new String[trimmed.length - this.defaultParam.getArgCount()+1];
+                    for (int i = 0; i < trimmed.length - (this.defaultParam.getArgCount()+1); i++)
+                        unhandledDefaultArgs[i] = trimmed[i + this.defaultParam.getArgCount() + 1];
 
                     String[] trimUnhandle = trim(unhandledDefaultArgs);
                     if (this.unhandled != null && trimUnhandle.length > 0) {

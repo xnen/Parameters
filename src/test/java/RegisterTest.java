@@ -226,7 +226,6 @@ public class RegisterTest {
                         this.testSevenPass = true;
                     }
                 })
-                .acceptArg("oneArg")
                 .build());
 
         try {
@@ -377,15 +376,18 @@ public class RegisterTest {
                 .build());
 
         parameters.handleInvalidOptionsWith(args -> {
+            System.out.println("INVALID ->" + Arrays.toString(args));
             if (args[0].equals("unhandled")) {
                 testTwelvePass = true;
             }
         });
 
         parameters.setDefaultParameter(ParamBuilder.with().identifier("default").description("default").handler(args -> {
-            if (args.length != 1 || !args[0].equals("help"))
+            if (args.length != 1 || !args[0].equals("help")) {
+                System.out.println(Arrays.toString(args));
                 testTwelveFail = true;
-        }).acceptArg("Arg").build());
+            }
+        }).build());
 
         try {
             parameters.process("help", "--test");
@@ -393,6 +395,9 @@ public class RegisterTest {
                 fail("Default parameter did not receive 'help' as its argument.");
             }
             parameters.process("help", "--test", "unhandled");
+            if (testTwelveFail) {
+                fail("Default parameter accepted the wrong argument.");
+            }
             if (!testTwelvePass) {
                 fail("'unhandled' not passed to unhandled IHandler. ");
             }
