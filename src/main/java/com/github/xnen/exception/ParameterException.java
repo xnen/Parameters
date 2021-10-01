@@ -1,9 +1,9 @@
 package com.github.xnen.exception;
 
-public class UnhandledParameterException extends Exception {
+public class ParameterException extends Exception {
     private final int id;
 
-    public UnhandledParameterException(int id, String message) {
+    public ParameterException(int id, String message) {
         super(message);
         this.id = id;
     }

@@ -1,240 +1,221 @@
 package com.github.xnen;
 
-import com.github.xnen.exception.UnhandledParameterException;
-import com.github.xnen.impl.IUnhandledHandler;
-import com.github.xnen.param.IParameter;
+import com.github.xnen.exception.ParameterException;
+import com.github.xnen.handler.DefaultHelpHandler;
+import com.github.xnen.impl.IHandler;
+import com.github.xnen.param.ParamBuilder;
+import com.github.xnen.param.Parameter;
 
-import java.io.PrintStream;
 import java.util.*;
 
+/**
+ * Basic Parameters Utility for easily registering and handling arguments passed to a Java application.
+ * @author david
+ */
 public final class Parameters {
-    private final List<IParameter> registeredParameters = new ArrayList<>();
-    private IParameter defaultParameter;
 
-    private final IUnhandledHandler unhandledHandler;
-    private final String jarName, jarDescription;
-    private String[] additionalHelpInfo;
+    private final List<Parameter> registered = new ArrayList<>();
+    private Parameter defaultParam;
 
-    /**
-     * Parameters library, used to easily register parameters for an application and translate them into an action.
-     * To specify a default parameter (a parameter that requires no identifier), utilize 'setDefaultParameter'.
-     *
-     * @param jarName - The name of the application using this library
-     * @param jarDescription - The description of the application using this library.
-     * @param unhandledHandler - Must be implemented to handle unidentified parameters.
-     */
-    public Parameters(String jarName, String jarDescription, IUnhandledHandler unhandledHandler) {
-        this.unhandledHandler = unhandledHandler;
-        this.jarDescription = jarDescription;
-        this.jarName = jarName;
+    private IHandler unhandled;
+    private IHandler helpHandler;
 
-        this.register(new IParameter() {
-            public void handle(String[] args) {
-                Parameters.this.printUsage(System.out, null);
-                System.exit(0);
-            }
-
-            public String[] identifiers() {
-                return new String[]{"--help"};
-            }
-
-            public String description() {
-                return "Displays this help message.";
-            }
-
-            @Override
-            public short priority() {
-                return Short.MAX_VALUE;
-            }
-        });
+    public Parameters(IHandler helpHandler) {
+       this.helpHandler = helpHandler;
+       init();
     }
 
-    public void setAdditionalHelpInfo(String[] additionalHelpInfo) {
-        this.additionalHelpInfo = additionalHelpInfo;
+    public Parameters(String jarName, String jarDescription, IHandler helpHandler) {
+        if (helpHandler == null)
+            this.helpHandler = new DefaultHelpHandler(this, System.out, jarName, jarDescription);
+        this.init();
     }
 
-    public void setDefaultParameter(IParameter parameter) {
-        this.defaultParameter = parameter;
+    public Parameters(String jarName, String jarDescription) {
+        this(jarName, jarDescription, null);
     }
 
-    /**
-     * Register a new Parameter and order the array based on priority.
-     */
-    public void register(IParameter param) {
-        this.registeredParameters.add(param);
-        this.registeredParameters.sort(
-                Comparator.comparingInt(IParameter::priority)
-        );
-        Collections.reverse(this.registeredParameters);
+    public void handleInvalidOptionsWith(IHandler unhandled) {
+        this.unhandled = unhandled;
     }
 
-    public void accept(String[] args) throws UnhandledParameterException {
-        Map<IParameter, String[]> argBuckets = new HashMap<>();
-        List<String[]> unhandledArgs = new ArrayList<>();
-        List<String> unhandledBuffer = new ArrayList<>();
+    public void setDefaultParameter(Parameter parameter) {
+        this.defaultParam = parameter;
+    }
 
-        for (int i = 0; i < args.length; i++) {
-            String arg = args[i];
+    private void init() {
+        this.register(ParamBuilder.with()
+                .identifier("--help", "-?")
+                .description("Shows this help dialog.")
+                .handler(this.helpHandler)
+                .priority(Short.MAX_VALUE)
+                .build());
+    }
 
-            boolean flag0 = false;
-            for (IParameter parameter : this.registeredParameters) {
-                if (this.paramMatch(parameter, arg)) {
-                    flag0 = true;
+    public void register(Parameter parameter) {
+        if (parameter == null)
+            throw new RuntimeException("Parameter cannot be null!");
 
-                    if (unhandledBuffer.size() > 0) {
-                        unhandledArgs.add(unhandledBuffer.toArray(new String[0]));
-                        unhandledBuffer.clear();
-                    }
+        if (paramIdExists(parameter)) {
+            throw new RuntimeException("Could not register parameter, as a parameter that matches those identifiers already exist!");
+        }
 
-                    if (!argBuckets.containsKey(parameter)) {
-                        if (parameter.argCount() == -1) {
-                            List<String> paramBuffer = new ArrayList<>();
-                            for (int j = 0; j < args.length - i; j++) {
-                                String s = args[1 + j + i];
+        this.registered.add(parameter);
+        this.registered.sort((o1, o2) -> Short.compare(o2.getPriority(), o1.getPriority()));
+    }
 
-                                boolean flag = false;
-                                for (IParameter parameter1 : this.registeredParameters) {
-                                    if (this.paramMatch(parameter1, s)) {
-                                        flag = true;
-                                        break;
-                                    }
-                                }
-
-                                if (!flag) {
-                                    paramBuffer.add(s);
-                                }
-                            }
-                            argBuckets.put(parameter, paramBuffer.toArray(new String[0]));
-                        } else if (parameter.argCount() == 0) {
-                            argBuckets.put(parameter, null);
-                        } else {
-                            if (i + parameter.argCount() + 1 > args.length) {
-                                throw new UnhandledParameterException(0, "Parameter expects " + parameter.argCount() + " but there aren't that many arguments in the command!");
-                            }
-
-                            String[] paramArgs = new String[parameter.argCount()];
-
-                            for (int j = 0; j < paramArgs.length; j++) {
-                                paramArgs[j] = args[1 + j + i];
-                            }
-
-                            argBuckets.put(parameter, paramArgs);
-                            i += parameter.argCount();
-                        }
-                    }
+    private boolean paramIdExists(Parameter parameter) {
+        for (String identifier : parameter.getIdentifiers()) {
+            for (Parameter param : this.registered) {
+                if (param.matches(identifier)) {
+                    System.out.println(identifier + " matches with " + Arrays.toString(param.getIdentifiers()));
+                    return true;
                 }
-            }
-            if (!flag0) {
-                unhandledBuffer.add(arg);
-            }
-        }
-
-        boolean defaultShouldHandle = false;
-
-        if (this.defaultParameter != null) {
-            int defaultParamArgs = unhandledArgs.size() == 0 ? 0 : unhandledArgs.get(0).length;
-            if (defaultParamArgs >= this.defaultParameter.argCount()) {
-                if (this.defaultParameter.validate(unhandledArgs.get(0))) {
-                    defaultShouldHandle = true;
-                } else {
-                    throw new UnhandledParameterException(3, "Default parameter was unable to validate input arguments.");
-                }
-            }
-        }
-
-        List<String> rawUnhandled = new ArrayList<>();
-
-        // Ignore first parameter if it was handled by the default Parameter.
-        for (int i = defaultShouldHandle ? 1 : 0; i < unhandledArgs.size(); i++) {
-            rawUnhandled.addAll(Arrays.asList(unhandledArgs.get(i)));
-        }
-
-        // Stop the process if unhandled items exist, as this is likely an unintended user input.
-        if (rawUnhandled.size() > 0) {
-            this.unhandledHandler.handle(rawUnhandled);
-            return;
-        }
-
-        // If all is well, continue handling.
-        if (defaultShouldHandle) {
-            this.defaultParameter.handle(unhandledArgs.get(0));
-        }
-
-
-        for (IParameter parameter : this.registeredParameters) {
-            if (argBuckets.containsKey(parameter)) {
-                String[] paramArgs = argBuckets.get(parameter);
-                if (parameter.validate(paramArgs)) {
-                    parameter.handle(paramArgs);
-                } else {
-                    throw new UnhandledParameterException(1, "Parameter " + parameter.identifiers()[0] + " failed to validate its arguments.");
-                }
-            } else if (parameter.required()) {
-                throw new UnhandledParameterException(2, "Parameter " + parameter.identifiers()[0] + " is required, but not specified.");
-            }
-        }
-    }
-
-    private boolean paramMatch(IParameter parameter, String string) {
-        for (String id : parameter.identifiers()) {
-            if (parameter.caseSensitive() ? id.equals(string) : id.equalsIgnoreCase(string)) {
-                return true;
             }
         }
 
         return false;
     }
 
-    public void printUsage(PrintStream printStream, List<String> unhandledArgs) {
-        if (unhandledArgs != null && unhandledArgs.size() > 0) {
-            printStream.println(this.jarName + ": unrecognized option" + (unhandledArgs.size() > 1 ? "s" : "") + " " + Arrays.toString(unhandledArgs.toArray(new String[0])));
-            printStream.println();
-        }
+    public void process(String... args) throws ParameterException {
+        String[] unhandledArgArray = new String[args.length];
+        System.arraycopy(args, 0, unhandledArgArray, 0, args.length);
 
-        StringBuilder sb = new StringBuilder("Usage: " + this.jarName + " ");
+        Map<Parameter, String[]> paramArgs = new HashMap<>();
+        String[] paramBuffer;
 
-        if (this.defaultParameter != null) {
-            sb.append("[").append(this.defaultParameter.identifiers()[0].toUpperCase(Locale.ROOT)).append("] ");
-        }
+        for (int i = 0; i < args.length; i++) {
+            for (Parameter parameter : this.registered) {
+                if (parameter.matches(args[i])) {
+                    int argCount;
 
-        for (IParameter parameter : this.registeredParameters) {
-            if (parameter.required()) {
-                sb.append(parameter.identifiers()[0]).append(" ");
-
-                if (parameter.argCount() == -1) {
-                    sb.append("[").append(parameter.argClarifiers()[0].toUpperCase(Locale.ROOT)).append("]... ");
-                } else if (parameter.argClarifiers() != null) {
-                    for (int i = 0; i < parameter.argClarifiers().length; i++) {
-                        sb.append("[").append(parameter.argClarifiers()[i]).append("] ");
+                    if (!parameter.isInfinite()) {
+                        argCount = parameter.getArgCount();
+                    } else if (i + 1 < args.length) {
+                        argCount = countValidInfiniteArgs(args, i);
+                    } else {
+                        argCount = 0;
                     }
+
+                    if (i + argCount + 1 <= args.length) {
+                        paramBuffer = new String[argCount];
+                        for (int j = 0; j < argCount; j++) {
+                            paramBuffer[j] = args[i + j + 1];
+                            unhandledArgArray[i + j + 1] = null;
+                        }
+
+                        paramArgs.put(parameter, paramBuffer);
+                    } else {
+                        throw new ParameterException(0, "Parameter '" + parameter + "' consumes more args than are available.");
+                    }
+
+                    unhandledArgArray[i] = null;
                 }
             }
         }
 
-        printStream.println(sb);
-        printStream.println(this.jarDescription);
-        printStream.println();
+        if (this.defaultParam != null) {
+            String[] trimmed = trim(unhandledArgArray);
 
-        for (IParameter parameter : this.registeredParameters) {
-            StringBuilder paramLine = new StringBuilder("  ");
-            for (String id : parameter.identifiers()) {
-                if (paramLine.length() > 2) paramLine.append(", ");
-                paramLine.append(id);
+            if (defaultParam.isInfinite() || this.defaultParam.getArgCount() == trimmed.length) {
+                paramArgs.put(this.defaultParam, trimmed);
+            } else {
+                if (this.defaultParam.getArgCount() >= trimmed.length) {
+                    throw new ParameterException(0, "Parameter '" + this.defaultParam + "' consumes more args than are available.");
+                } else {
+                    String[] unhandledDefaultArgs = new String[trimmed.length - this.defaultParam.getArgCount()];
+                    for (int i = 0; i < trimmed.length - this.defaultParam.getArgCount(); i++)
+                        unhandledDefaultArgs[i] = trimmed[i + this.defaultParam.getArgCount()];
+
+                    String[] trimUnhandle = trim(unhandledDefaultArgs);
+                    if (this.unhandled != null && trimUnhandle.length > 0) {
+                        this.unhandled.handle(trimUnhandle);
+                        return;
+                    }
+                }
             }
-            paramLine.append("\t");
-            paramLine.append(parameter.description());
-            printStream.println(paramLine);
+        } else if (this.unhandled != null && trim(unhandledArgArray).length > 0) {
+            this.unhandled.handle(trim(unhandledArgArray));
+            return;
         }
 
-        if (this.additionalHelpInfo != null) {
-            for (String s : this.additionalHelpInfo) {
-                printStream.println(s);
+        List<Parameter> allParams = new ArrayList<>(this.registered);
+        if (this.defaultParam != null) {
+            allParams.add(this.defaultParam);
+        }
+        allParams.sort((o1, o2) -> Short.compare(o2.getPriority(), o1.getPriority()));
+
+        for (Parameter parameter : allParams) {
+            if (parameter.isRequired() && !paramArgs.containsKey(parameter)) {
+                boolean flag = false;
+
+                if (parameter.getRequiredClauses() != null) {
+                    for (String s : parameter.getRequiredClauses()) {
+                        for (Parameter param : paramArgs.keySet()) {
+                            if (param.matches(s)) {
+                                flag = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Allow --help to always be a required clause.
+                for (Parameter param : paramArgs.keySet()) {
+                    if (param.matches("--help")) {
+                        flag = true;
+                        break;
+                    }
+                }
+
+                if (!flag) {
+                    throw new ParameterException(1, "Parameter '" + parameter + "' is required, but not present.");
+                }
+            }
+        }
+
+        for (Parameter parameter : allParams) {
+            if (paramArgs.containsKey(parameter)) {
+                if (!parameter.isValid(paramArgs.get(parameter))) {
+                    throw new ParameterException(2, "Parameter '" + parameter + "' returned FALSE during validation.");
+                }
+            }
+        }
+
+        for (Parameter parameter : allParams) {
+            if (paramArgs.containsKey(parameter)) {
+                parameter.accept(paramArgs.get(parameter));
             }
         }
     }
 
-    public int getRegisteredParamCount() {
-        return this.registeredParameters.size();
+    private String[] trim(String[] input) {
+        return Arrays.stream(input).filter(Objects::nonNull).toArray(String[]::new);
     }
 
+    private int countValidInfiniteArgs(String[] args, int fromIndex) {
+        int j = 0;
+
+        for (int i = fromIndex + 1; i < args.length; i++) {
+            boolean flag = false;
+
+            for (Parameter parameter1 : this.registered) {
+                if (parameter1.matches(args[i])) {
+                    return j;
+                }
+            }
+
+            j++;
+        }
+
+        return j;
+    }
+
+    public Parameter getDefaultParameter() {
+        return this.defaultParam;
+    }
+
+    public List<Parameter> getRegisteredParameters() {
+        return this.registered;
+    }
 }
