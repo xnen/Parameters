@@ -23,6 +23,7 @@ public class DefaultHelpHandler implements IHandler {
     @Override
     public void handle(String... args) {
         this.showHelp();
+        System.exit(0);
     }
 
     public void showHelp() {
