@@ -406,4 +406,187 @@ public class RegisterTest {
             fail("ParameterException thrown in normal usage.");
         }
     }
+
+    private boolean helpCalled;
+    private boolean handledFile;
+    private boolean settingsCleared;
+
+    private int numUnhandled;
+    private String[] unhandledThirteen;
+
+    @Test
+    public void testThirteen() {
+        Parameters parameters = new Parameters(args -> RegisterTest.this.helpCalled = true);
+
+        parameters.register(
+                ParamBuilder.with().identifier("--clear-settings").description("Clear all settings and restore defaults")
+                        .handler(args -> RegisterTest.this.settingsCleared = true)
+                        .priority((short) 10)
+                        .build()
+        );
+
+        parameters.setDefaultParameter(ParamBuilder.with().identifier("*.*").description("A File")
+                .handler(strings -> {
+                    RegisterTest.this.handledFile = true;
+                    System.out.println(Arrays.toString(strings));
+                })
+                .build());
+
+        IHandler unhandled = args -> {
+            System.out.println(Arrays.toString(args));
+            numUnhandled = args.length;
+            unhandledThirteen = args;
+        };
+
+        parameters.handleInvalidOptionsWith(unhandled);
+
+        try {
+            parameters.accept("--help");
+            if (!this.helpCalled) {
+                fail("--help failed to call when default parameter is present.");
+            }
+            if (this.handledFile) {
+                fail("Something went horribly wrong.");
+            }
+            if (numUnhandled > 0) {
+                fail("Unexpected unhandled args");
+            }
+
+            helpCalled = false;
+
+            parameters.accept("file.txt", "--clear-settings");
+            if (!this.handledFile) {
+                fail("file.txt failed to accept into param handler");
+            }
+            if (!this.settingsCleared) {
+                fail("Failed to clear settings");
+            }
+            if (numUnhandled > 0) {
+                fail("Unexpected unhandled args");
+            }
+
+            handledFile = false;
+            settingsCleared = false;
+
+            parameters.accept("file1.txt", "-invalid-option", "--clear-settings");
+            if (this.handledFile) {
+                fail("File handled when invalid option exists.");
+            }
+            if (settingsCleared) {
+                fail("Settings cleared when invalid option exists.");
+            }
+
+            if (numUnhandled < 1) {
+                fail("Expected unhandled arg, didn't get any.");
+            }
+            if (numUnhandled > 1) {
+                fail("More unhandled args than expected.");
+            }
+            if (!unhandledThirteen[0].equals("-invalid-option")) {
+                fail("Passed unhandled arg is not what I expected.");
+            }
+
+            numUnhandled = 0;
+
+            // Default arg isnt required
+            parameters.accept("--clear-settings");
+
+            if (!settingsCleared) {
+                fail("Settings should have cleared, but hadn't.");
+            }
+
+        } catch (ParameterException e) {
+            e.printStackTrace();
+            fail("ParameterException thrown in normal usage.");
+        }
+    }
+
+    private String[] unhandledFourteen;
+
+    private String helpOrFile;
+
+    @Test
+    public void testFourteen() {
+        this.helpCalled = false;
+        this.handledFile = false;
+        this.settingsCleared = false;
+        this.numUnhandled = 0;
+
+        Parameters parameters = new Parameters(args -> {
+            this.helpOrFile = "help";
+            RegisterTest.this.helpCalled = true; });
+
+        parameters.register(
+                ParamBuilder.with().identifier("--clear-settings").description("Clear all settings and restore defaults")
+                        .handler(args -> RegisterTest.this.settingsCleared = true)
+                        .priority((short) 10)
+                        .build()
+        );
+
+        parameters.setDefaultParameter(ParamBuilder.with().identifier("*.*").description("A File")
+                .handler(strings -> {
+                    RegisterTest.this.handledFile = true;
+                    this.helpOrFile = "file";
+                    System.out.println(Arrays.toString(strings));
+                })
+                .required().build());
+
+        IHandler unhandled = args -> {
+            System.out.println(Arrays.toString(args));
+            numUnhandled = args.length;
+            unhandledFourteen = args;
+        };
+
+        parameters.handleInvalidOptionsWith(unhandled);
+
+        try {
+            parameters.process("--help");
+            if (!this.helpCalled) {
+                fail("--help failed to be called.");
+            }
+
+            this.helpCalled = false;
+            this.handledFile = false;
+
+            parameters.process("test.txt", "--help");
+            if (this.helpCalled) {
+                if (this.handledFile) {
+                    if (this.helpOrFile.equals("help")) {
+                        fail("Default param handled before --help, or not called at all?");
+                    }
+                }
+            } else {
+                fail("--help failed to be called with default param satisfied.");
+            }
+
+            this.helpCalled = false;
+        } catch (ParameterException e) {
+            e.printStackTrace();
+            fail("ParameterException thrown in normal usage.");
+        }
+
+        if (numUnhandled > 0) {
+            fail("Unhandled higher than expected before unhandled test.");
+        }
+
+        try {
+            parameters.process();
+            fail("Required default arg is not satisfied, but allowed to continue anyway.");
+
+            parameters.process("test1.txt", "test2.txt");
+            if (numUnhandled < 1) {
+                fail("Expected unhandled arg, but got none.");
+            }
+            if (numUnhandled > 1) {
+                fail("Expected only one unhandled arg, but got one.");
+            }
+
+            if (!unhandledFourteen[0].equals("test2.txt")) {
+                fail("Unexpected unhandled arg. Should be 'test2.txt', but got " + unhandledFourteen[0]);
+            }
+
+        } catch (ParameterException e) {
+            // ignored
+        }
+    }
 }

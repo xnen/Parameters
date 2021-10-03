@@ -26,6 +26,7 @@ public class DefaultHelpHandler implements IHandler {
         System.exit(0);
     }
 
+    // TODO: .priority should max out at Short.MAX_VALUE - 1, as help should always be the highest priority
     public void showHelp() {
         StringBuilder sb = new StringBuilder("Usage: " + this.jarName + " ");
 

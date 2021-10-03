@@ -77,6 +77,17 @@ public final class Parameters {
         return false;
     }
 
+    /**
+     * Alias for process(String...)
+     * Process args against registered parameters
+     */
+    public void accept(String... args) throws ParameterException {
+        this.process(args);
+    }
+
+    /**
+     * Process args against registered parameters.
+     */
     public void process(String... args) throws ParameterException {
         String[] unhandledArgArray = new String[args.length];
         System.arraycopy(args, 0, unhandledArgArray, 0, args.length);
@@ -114,35 +125,49 @@ public final class Parameters {
             }
         }
 
-        if (this.defaultParam != null) {
-            String[] trimmed = trim(unhandledArgArray);
+        String[] trimmed = trim(unhandledArgArray);
 
-            if (this.defaultParam.isInfinite() || this.defaultParam.getArgCount() + 1 == trimmed.length) {
+        if (this.defaultParam != null) {
+            int expectedDefaultArgs = this.defaultParam.getArgCount() + 1;
+
+            if (this.defaultParam.isInfinite() && trimmed.length > 0) {
                 paramArgs.put(this.defaultParam, trimmed);
             } else {
-                if (this.defaultParam.getArgCount() >= trimmed.length) {
-                    throw new ParameterException(0, "Parameter '" + this.defaultParam + "' consumes more args than are available.");
+                if (this.defaultParam.isRequired()) {
+                    if (expectedDefaultArgs == trimmed.length) {
+                        paramArgs.put(this.defaultParam, trimmed);
+                    } else if (this.unhandled != null) {
+                        if (trimmed.length > expectedDefaultArgs) {
+                            String[] unhandledWithoutDefaults = new String[trimmed.length - expectedDefaultArgs];
+                            System.arraycopy(trimmed, expectedDefaultArgs, unhandledWithoutDefaults, 0, trimmed.length - expectedDefaultArgs);
+                            this.unhandled.handle(unhandledWithoutDefaults);
+                            return;
+                        } else {
+                            /* TODO - Testing behavior by not throwing an exception here */ //throw new ParameterException(0, "Parameter '" + this.defaultParam + "' consumes more args than are available.");
+                        }
+                    }
                 } else {
-                    String[] unhandledDefaultArgs = new String[trimmed.length - this.defaultParam.getArgCount()+1];
-                    for (int i = 0; i < trimmed.length - (this.defaultParam.getArgCount()+1); i++)
-                        unhandledDefaultArgs[i] = trimmed[i + this.defaultParam.getArgCount() + 1];
-
-                    String[] trimUnhandle = trim(unhandledDefaultArgs);
-                    if (this.unhandled != null && trimUnhandle.length > 0) {
-                        this.unhandled.handle(trimUnhandle);
+                    if (trimmed.length <= expectedDefaultArgs) {
+                        if (trimmed.length > 0) {
+                            paramArgs.put(this.defaultParam, trimmed);
+                        }
+                    } else if (this.unhandled != null) {
+                        String[] unhandledWithoutDefaults = new String[trimmed.length - expectedDefaultArgs];
+                        System.arraycopy(trimmed, expectedDefaultArgs, unhandledWithoutDefaults, 0, trimmed.length - expectedDefaultArgs);
+                        this.unhandled.handle(unhandledWithoutDefaults);
                         return;
                     }
                 }
             }
-        } else if (this.unhandled != null && trim(unhandledArgArray).length > 0) {
-            this.unhandled.handle(trim(unhandledArgArray));
+        } else if (this.unhandled != null && trimmed.length > 0) {
+            this.unhandled.handle(trimmed);
             return;
         }
 
         List<Parameter> allParams = new ArrayList<>(this.registered);
-        if (this.defaultParam != null) {
+        if (this.defaultParam != null)
             allParams.add(this.defaultParam);
-        }
+
         allParams.sort((o1, o2) -> Short.compare(o2.getPriority(), o1.getPriority()));
 
         for (Parameter parameter : allParams) {
